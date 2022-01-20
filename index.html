@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>node-onlykey-agent</title>
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/lib/webrtc.js"></script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/css/bootstrap.min.css" integrity="sha384-zCbKRCUGaJDkqS1kPbPd7TveP5iyJE0EjAuZQTgFLD2ylzuqKfdKlfG/eSrtxUkn" crossorigin="anonymous">
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/js/bootstrap.bundle.min.js" integrity="sha384-fQybjgWLrvvRgtW6bFlB7jaZrFsaBXjsOMm/tB9LTS58ONXgqbR9W8oWht/amnpF" crossorigin="anonymous"></script>
+    <style>
+        body,
+        input {
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <form id="add-agent-key" style="display:none;">
+            <div class="form-group">
+                <label for="agent-client-key-name">Add Agent Key</label>
+                <input type="email" class="form-control" id="agent-client-key-name">
+
+            </div>
+            <div class="form-group row">
+                <div class="col-12">
+                    <button type="button" class="btn btn-primary" id="add-agent-client-key">Add</button>
+                </div>
+            </div>
+        </form>
+
+        <div class="row">
+            <div class="container" id="agent-keys">
+
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Modal -->
+    <div class="modal fade" id="myModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="exampleModalLabel">PIN Approval</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+                </div>
+                <div class="modal-body">
+                    <form>
+                        <div class="form-group">
+                            <label for="pincode" class="col-form-label">PinCode:</label>
+                            <div class="row">
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_1">
+                                </div>
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_2">
+                                </div>
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_3">
+                                </div>
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_4">
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_5">
+                                </div>
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_6">
+                                </div>
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_7">
+                                </div>
+                                <div class="col-sm-3">
+                                    <input type="text" class="form-control pin_code" id="pincode_8">
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="Approve">Approve</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var Peer = require('simple-peer')
+
+        // var peer2 = new Peer()
+
+        // peer1.on('signal', data => {
+        //   // when peer1 has signaling data, give it to peer2 somehow
+        //   peer2.signal(data)
+        // })
+
+        // peer2.on('signal', data => {
+        //   // when peer2 has signaling data, give it to peer1 somehow
+        //   peer1.signal(data)
+        // })
+
+        // var peer1 = new Peer({ initiator: true })
+        // peer1.on('connect', () => {
+        //   // wait for 'connect' event before using the data channel
+        //   peer1.send('hey peer2, how is it going?')
+        // })
+
+        // peer1.on('data', data => {
+        //   // got a data channel message
+        //   console.log('got a message from peer2: ' + data)
+        // })
+
+        /* global nw GUN SEA $ */
+
+        var util = require('util');
+        var $crypto = require('crypto');
+        var nodeHID = require('@trustcrypto/node-onlykey/node_modules/node-hid');
+        var EventEmitter = require("events").EventEmitter;
+
+        nw.Window.get().showDevTools();
+
+        function data_stringify(data) {
+            if (data.data) {
+                return "JSON" + JSON.stringify({ data: data.data, ts: new Date().getTime() });
+            }
+            else {
+                return JSON.stringify(data);
+            }
+        }
+
+        function data_parse(data) {
+            if (data)
+                if (data.slice(0, 4) == "JSON") {
+                    return JSON.parse(data.slice(4));
+                }
+            else {
+                return JSON.parse(data);
+            }
+        }
+
+        $(function() {
+
+            $('#myModal').on('shown.bs.modal', function() {
+
+                nw.Window.get().focus();
+
+                var i = 0;
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+                $('#myModal').find("#pincode_" + (++i)).val('')
+
+                $('#myModal').find("#pincode_1").trigger('focus')
+            })
+            var kd = false;
+            var pinDone = false;
+            $(".pin_code").change(function($e) {
+                console.log($e);
+            }).focus(function($e) {
+                console.log($e);
+
+
+                var pincode_id = parseInt($e.target.id.split("_")[1]);
+                var lastCode = $("#pincode_" + (pincode_id - 1));
+
+                if (pincode_id > 1 && lastCode.val().length == 0) {
+                    lastCode.trigger("focus");
+                    return $e.preventDefault();
+                }
+                $($e.target).select();
+            }).keydown(function($e) {
+
+                var pincode_id = parseInt($e.target.id.split("_")[1]);
+
+                if (kd) return $e.preventDefault();
+
+                kd = pincode_id;
+
+                console.log($e);
+                if ($e.keyCode == 8) return;
+
+                if ($($e.target).val().length >= 1) {
+                    if (window.getSelection().toString() == $($e.target).val()) return;
+                    return $e.preventDefault()
+                }
+            }).keyup(function($e) {
+                var pincode_id = parseInt($e.target.id.split("_")[1]);
+
+                if (!(pincode_id == kd)) {
+
+                    return $e.preventDefault()
+                }
+
+                kd = 0;
+                // if($($e.target).val().length >= 2) return $e.preventDefault()
+
+                if ($e.keyCode != 8 && $("#pincode_" + pincode_id).val().length == 0) return;
+
+                console.log(pincode_id, $e.keyCode, $e.target.id);
+                if ($e.keyCode == 8) {
+                    if (pincode_id > 1)
+                        $("#pincode_" + (pincode_id - 1)).trigger("focus");
+                    return; //$e.preventDefault()
+                }
+                if (pincode_id < 8) {
+
+                    $("#pincode_" + (pincode_id + 1)).trigger("focus");
+                    return;
+                }
+                else {
+                    // var par = $($e.target).parent("#myModal");
+                    // console.log("parent",par);
+                    $($e.target).parent().parent().parent().parent().parent().parent().parent().find("#Approve").click();
+                }
+                return $e.preventDefault();
+                // var $t = $($e.target);
+                // window.$e = $e;
+
+            });
+
+
+
+            setTimeout(function() {
+
+                function onlykey3rd(cb) {
+
+                    var plugins = [];
+
+                    plugins.push(require("@trustcrypto/node-onlykey/src/onlykey-fido2/plugin.js")); //load onlykey plugin for testing
+
+                    // plugins.push(require("@trustcrypto/node-onlykey/src/console/console_debug.js")); //load onlykey plugin for testing
+                    // plugins.push(require("@trustcrypto/node-onlykey/src/window.js")); //load onlykey plugin for testing
+
+                    var architect = require("@trustcrypto/node-onlykey/libs/architect.js");
+
+                    plugins.push({
+                        provides: ["app", "window", "console"],
+                        consumes: ["hub"],
+                        setup: function(options, imports, register) {
+                            register(null, {
+                                app: new EventEmitter(),
+                                window: window,
+                                console: window.console
+                            });
+                        }
+                    });
+
+                    architect.createApp(plugins, function(err, app) {
+
+                        if (err) return console.error(err);
+                        app.services.app.core = app.services;
+                        for (var i in app.services) {
+                            app.services.app[i] = app.services[i];
+                        }
+                        for (var i in app.services) {
+                            if (app.services[i].init) app.services[i].init(app);
+                        }
+
+                        // app.services.app.emit("start");
+
+                        // callback(null, app);
+
+
+                        cb(app.services.onlykey3rd);
+                    });
+                }
+                onlykey3rd(function(ONLYKEY) {
+
+                    var gun = GUN(["http://localhost:8765/gun", "https://onlykey.herokuapp.com/gun", "https://gun-manhattan.herokuapp.com/gun"]);
+                    var user = gun.user();
+
+                    var ok = ONLYKEY();
+                    window.ok = ok;
+
+                    var id_gunKey = "node-onlykey-agent-17";
+                    var ok_epub = false;
+                    ok.derive_public_key(id_gunKey, 1, false, function(error, ok_jwk_epub) {
+                        ok_epub = ok_jwk_epub;
+                        ok.derive_shared_secret(id_gunKey, ok_jwk_epub, 1, false, function(error, secret) {
+                            var hash = $crypto.createHash('sha256').update(secret).digest();
+                            var alias = Buffer.from(hash).toString("HEX");
+                            // console.log(alias)
+
+
+                            user.create(alias, secret, function(ack) {
+                                if (ack.err == "User already created!") {
+
+                                    user.auth(alias, secret, function(ack) {
+                                        gun.get(ack.soul).get("ok-key").once(async function(data) {
+                                            var key = JSON.parse(data.key.slice(4));
+                                            ok.derive_shared_secret(id_gunKey, key.epub, 1, false, async function(error, $secret) {
+                                                key = {
+                                                    pub: key.pub,
+                                                    epub: key.epub,
+                                                    priv: await SEA.decrypt(key.priv, $secret),
+                                                    epriv: await SEA.decrypt(key.epriv, $secret)
+                                                }
+                                                // console.log(key)
+
+                                                ready(ok, gun, user, key)
+                                                // gun.user(publicKey).once(console.log)
+                                            });
+                                        });
+
+
+                                    })
+                                }
+                                else {
+                                    SEA.pair().then(function(pair) {
+                                        ok.derive_shared_secret(id_gunKey, pair.epub, 1, false, async function(error, $secret) {
+                                            var key = {
+                                                pub: pair.pub,
+                                                epub: pair.epub,
+                                                priv: await SEA.encrypt(pair.priv, $secret),
+                                                epriv: await SEA.encrypt(pair.epriv, $secret)
+                                            }
+                                            key = "JSON" + JSON.stringify(key);
+                                            //var enc = await SEA.encrypt('shared data', await SEA.secret(bob.epub, alice));
+                                            /*
+                                                epriv: "YQjMiG8TGKiPvcPD7aVsMYnRkC_TA6MScFwKOJ_1Bkk"
+                                                epub: "qG69aMeM8bSkIiqAhs2b-uLgr9l6r441m4KmGuU7RcE.fKohz-ZNhOdbVHjzlwcyZotVnhUZV4FGh_eD28hqGWw"
+                                                priv: "Qtow-uYJqJrvUoP24uTxULXY_vcOtLvSEAorEHCrFCk"
+                                                pub: "eQGs9wGJXgslrXu-mgcMjqex4RRnzfnsIOsIxGavqDU.EpY1NYbm11qrThrCWEM3t2r9ZsHKedkkY1B0fQJ1L-4"
+                                            */
+                                            console.log(key)
+                                            user.auth(alias, secret, async function(ack) {
+                                                gun.get(ack.soul).get("ok-key").once(function(data) {
+                                                    var key = JSON.parse(data.key.slice(4));
+                                                    ok.derive_shared_secret(id_gunKey, key.epub, 1, false, async function(error, $secret) {
+                                                        key = {
+                                                            pub: key.pub,
+                                                            epub: key.epub,
+                                                            priv: await SEA.decrypt(key.priv, $secret),
+                                                            epriv: await SEA.decrypt(key.epriv, $secret)
+                                                        }
+                                                        // console.log(key)
+
+                                                        ready(ok, gun, user, key)
+                                                        // gun.user(publicKey).once(console.log)
+                                                    });
+                                                });
+
+                                                user.get("ok-key").put({ key: key })
+                                            })
+                                        })
+                                    });
+                                }
+
+                            })
+
+                        })
+
+                    })
+
+                    function ready(ok, gun, user, key) {
+                        window._gun = gun;
+                        $("#add-agent-key").show();
+                        $("#add-agent-client-key").click(async function() {
+                            var seed = $("#agent-client-key-name").val();
+                            $("#agent-client-key-name").val('');
+                            getPub(seed, async function(data) {
+
+                                let hash = await SEA.work(data, null, null, { name: 'SHA-256' })
+                                gun.get('#key-names').get(hash).put(data); // User puts a hashed soul of the message in a public content-addressed node
+                                user.get('key-names').get(hash).put(seed);
+
+
+
+                                // var hash = await SEA.work(data, null, null, { name: "SHA-256" } );
+                                // gun_user_data.get('#keys').get(hash).put(data);
+                                // gun_user_data.get('#keys').get(hash).once(console.log);
+                            })
+
+                        });
+
+                        (function() {
+
+                            var keyHashes = {};
+
+                            user.get('key-names').map().on((seed, hash) => {
+                                // console.log(hash, data) ;
+                                if (seed == null) {
+                                    if (keyHashes[hash] && $("#" + keyHashes[hash].id).length > 0)
+                                        $("#" + keyHashes[hash].id).remove()
+                                }
+                                else
+                                    return gun.get('#key-names').get(hash).once(function(pubkey) {
+                                        var initItem = false;
+
+                                        if (!keyHashes[hash]) {
+                                            initItem = true;
+
+                                            var id = new Uint8Array(6);
+                                            window.crypto.getRandomValues(id);
+                                            id = Buffer.from(id).toString("hex");
+
+                                            keyHashes[hash] = {
+                                                hash: hash,
+                                                pubkey: pubkey,
+                                                seed: seed,
+                                                id: id
+                                            }
+                                        }
+
+                                        keyHashes[hash].touch = new Date().getTime();
+
+                                        updateKey(hash, keyHashes[hash], initItem)
+                                    });
+
+
+                            });
+
+                        })();
+
+                        function updateKey(hash, data, init) {
+                            var container = $("#" + data.id);
+                            if (container.length == 0)
+                                init = true;
+
+                            if (init) {
+                                container = $("<div class='row' id='" + data.id + "' />");
+                                $("#agent-keys").append(container);
+
+                                container.html(`
+                                <div class="col-12">
+                                <hr/>
+                                  <label>${data.seed}</label>
+                                  <div class="input-group">
+                                    <div class="input-group-prepend">
+                                      <button class="btn btn-secondary" class="copy">copy</button>
+                                    </div>
+                                    <input type="text" class="form-control" value="ssh-ed25519 ${data.pubkey}">
+                                  </div>
+                                  <div class="input-group">
+                                    <div class="input-group-prepend">
+                                      <button class="btn btn-secondary" class="copy">copy</button>
+                                    </div>
+                                    <input type="text" class="form-control"value="${hash}">
+                                    <div class="input-group-append">
+                                      <button class="btn btn-danger delete">delete</button>
+                                    </div>
+                                  </div>
+                                  <small id="pubkey" class="form-text text-primary"></small>
+                                  <br/>
+                                </div>`)
+
+                                container.find(".delete").click(function() {
+                                    user.get('key-names').get(hash).put(null)
+                                })
+                                var preApprove = {};
+                                var pkts = 0;
+                                gun.get("ok-" + hash).get("ok-pubkey").get("remote").on(function(pubkey) {
+                                    // console.log(arguments)
+                                    if (pubkey) {
+                                        // gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(false);
+                                        pubkey = data_parse(pubkey);
+                                        if (pkts < pubkey.ts) {
+                                            console.log(pubkey);
+                                            pkts = pubkey.ts;
+                                            pubkey = pubkey.data;
+
+
+                                            var pubs = { epub: ok_epub }
+                                            var com_data;
+                                            gun.get("ok-" + hash).get("ok-pubkey").get("com").get(pubkey.epub + "." + pkts)
+                                                .put(com_data = data_stringify({ data: pubs }))
+
+                                            com_data = data_parse(com_data);
+
+                                            var pair_hash = $crypto.createHash('sha256').update(hash + pubkey.epub + pubkey.pub).digest();
+                                            var pin = genPin(pair_hash)
+
+                                            console.log("pin", pin)
+                                            console.log(pubs);
+
+                                            // $('#myModal').on('shown.bs.modal', function() {
+                                            //     $(this).find("input").trigger('focus')
+                                            // })
+                                            if (preApprove[hash + pubkey.epub + pubkey.pub])
+                                                step_a([0], [0]);
+                                            else {
+                                                console.log("requing pin from user")
+                                                $('#myModal').modal('show');
+                                                $("#myModal").find("#Approve").click(function() {
+                                                    var i = 0;
+                                                    var pin_c = [];
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+                                                    pin_c.push(parseInt($('#myModal').find("#pincode_" + (++i)).val()));
+
+                                                    step_a(pin_c, pin);
+                                                    console.log(pin_c, pin)
+                                                    // ok.derive_shared_secret(id_gunKey, pubkey.epub, 1, false, function(error, secret) {
+                                                    //     console.log("secret", secret)
+                                                    // });
+
+                                                })
+
+                                            }
+
+                                            function step_a(pin_c, pin) {
+                                                if (!comparePin(pin_c, pin))
+                                                    console.log("pin fail")
+                                                else {
+                                                    preApprove[hash + pubkey.epub + pubkey.pub] = true;
+                                                    $('#myModal').modal('hide');
+                                                    ok.derive_shared_secret(id_gunKey, pubkey.epub, 1, false, function(error, secret) {
+                                                        container.find("#pubkey").html(secret)
+
+                                                        console.log("secret", secret)
+
+                                                        var peer1 = new Peer({ initiator: true })
+                                                        peer1.on('connect', () => {
+                                                            // wait for 'connect' event before using the data channel
+                                                            setInterval(function(){
+                                                                peer1.send(data_stringify({ data: 'hey peer2, how is it going?' }))
+                                                            },1000);
+                                                        })
+
+                                                        peer1.on('data', data => {
+                                                            // got a data channel message
+                                                            data = data_parse(data);
+                                                            console.log(data)
+                                                        })
+                                                        var shash = $crypto.createHash('sha256').update(pkts + secret).digest().toString("hex");
+                                                        console.log("shash", shash)
+                                                        peer1.on("signal", async function(data) {
+                                                            var d = data_stringify({ data: await SEA.encrypt(data, secret) })
+                                                            gun.get(shash).get("peer1").get("signal").put(d)
+                                                        });
+                                                        gun.get(shash).get("peer2").get("signal").on(async function(data) {
+                                                            data = await SEA.decrypt(data_parse(data).data, secret);
+                                                            peer1.signal(data);
+                                                        });
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                })
+                            }
+                        }
+
+                        function comparePin(check2, check1) {
+                            for (var i in check2) {
+                                if (check2[i] != check1[i])
+                                    return false;
+                            }
+                            return true;
+                        }
+
+                        function genPin(pin_data) {
+                            var pin_hash = $crypto.createHash('sha256').update(pin_data).digest();
+                            var pid = 0;
+                            return [
+                                get_pin(pin_hash[pid]),
+                                get_pin(pin_hash[pid += 4]),
+                                get_pin(pin_hash[pid += 4]),
+                                get_pin(pin_hash[pid += 4]),
+                                get_pin(pin_hash[pid += 4]),
+                                get_pin(pin_hash[pid += 4]),
+                                get_pin(pin_hash[pid += 4]),
+                                get_pin(pin_hash[pid += 4])
+                            ];
+                        }
+
+                        function get_pin(byte) {
+                            return (byte % 9) + 1;
+                        }
+                        /*var fetchDone = false;
+                        var keyHashes = {};
+                        user.get('key-names').map().on((data , index) => { 
+                            if(!fetchDone){
+                                console.log(index, data) ;
+                                keyHashes[index] = data;
+                                
+                            }
+                            
+                        }).then(function(){
+                            fetchDone = true;
+                            console.log("done?");
+                            console.log(keyHashes);
+                            for(var i in keyHashes){
+                                (function(d , i){
+                                    gun.get('#key-names').get(i).once(function(pubkey){
+                                        console.log(d, pubkey);
+                                    });
+                                })(keyHashes[i], i);
+                                
+                            }
+                        });
+                        
+                        */
+                    }
+
+
+                    // import GUN from 'gun'; // in ESM
+                    // GUN = require('gun'); // in NodeJS
+                    // GUN = require('gun/gun'); // in React
+
+                    // var user = gun.user().recall({ sessionStorage: true }, function() {
+                    //     console.log(arguments)
+                    // });
+
+                    // console.log(user);
+
+                    function hexStrToDec(hexStr) {
+                        return ~~(new Number('0x' + hexStr).toString(10));
+                    };
+
+                    function bytes2string(bytes) {
+                        if (!bytes) return;
+                        var ret = Array.from(bytes).map(function chr(c) {
+                            if (c == 0) return '';
+                            if (c == 255) return '';
+                            return String.fromCharCode(c);
+                        }).join('');
+                        return ret;
+                    };
+
+                    function MissingEnvironmentVariableError(variable) {
+                        this.name = 'MissingEnvironmentVariableError';
+                        this.message = variable + ' was not found in your environment';
+                        this.variable = variable;
+                        Error.captureStackTrace(this, MissingEnvironmentVariableError);
+                    }
+                    util.inherits(MissingEnvironmentVariableError, Error);
+
+                    function TimeoutError(message) {
+                        this.name = 'TimeoutError';
+                        this.message = message;
+                        Error.captureStackTrace(this, TimeoutError);
+                    }
+                    util.inherits(TimeoutError, Error);
+
+                    function InvalidProtocolError(message) {
+                        this.name = 'InvalidProtocolError';
+                        this.message = message;
+                        Error.captureStackTrace(this, InvalidProtocolError);
+                    }
+                    util.inherits(InvalidProtocolError, Error);
+
+
+                    const messageHeader = [255, 255, 255, 255];
+
+                    const messageFields = {
+                        LABEL: 1,
+                        URL: 15,
+                        NEXTKEY4: 18, //Before Username
+                        NEXTKEY1: 16, //After Username
+                        DELAY1: 17,
+                        USERNAME: 2,
+                        NEXTKEY5: 19, //Before OTP
+                        NEXTKEY2: 3, //After Password
+                        DELAY2: 4,
+                        PASSWORD: 5,
+                        NEXTKEY3: 6, //After OTP
+                        DELAY3: 7,
+                        TFATYPE: 8,
+                        TFAUSERNAME: 9,
+                        YUBIAUTH: 10,
+                        LOCKOUT: 11,
+                        WIPEMODE: 12,
+                        BACKUPKEYMODE: 20,
+                        SSHCHALLENGEMODE: 21,
+                        PGPCHALLENGEMODE: 22,
+                        SECPROFILEMODE: 23,
+                        TYPESPEED: 13,
+                        LEDBRIGHTNESS: 24,
+                        LOCKBUTTON: 25,
+                        KBDLAYOUT: 14
+                    };
+
+                    const messages = {
+                        OKSETPIN: 225, //0xE1
+                        OKSETSDPIN: 226, //0xE2
+                        OKSETPIN2: 227, //0xE3
+                        OKSETTIME: 228, //0xE4
+                        OKGETLABELS: 229, //0xE5
+                        OKSETSLOT: 230, //0xE6
+                        OKWIPESLOT: 231, //0xE7
+                        OKSETU2FPRIV: 232, //0xE8
+                        OKWIPEU2FPRIV: 233, //0xE9
+                        OKSETU2FCERT: 234, //0xEA
+                        OKWIPEU2FCERT: 235, //0xEB
+                        OKGETPUBKEY: 236,
+                        OKSIGN: 237,
+                        OKWIPEPRIV: 238,
+                        OKSETPRIV: 239,
+                        OKDECRYPT: 240,
+                        OKRESTORE: 241,
+                        OKFWUPDATE: 244,
+                    };
+
+                    /*
+                switch (argv.cmd) {
+                	case 'settime':
+                		setTime();
+                		break;
+        
+                	case 'getlabels':
+                		getLabels();
+                		break;
+        
+                	case 'getpub':
+                		getPub();
+                		break;
+        
+                	case 'sign':
+                		sign();
+                		break;
+        
+                	case 'dotest':
+                		dotest();
+                		break;
+        
+                	default:
+        
+                		console.log("argv", argv);
+        
+                }*/
+
+                    function findHID(hid_interface) {
+                        var hids = nodeHID.devices();
+
+                        //console.log(hids);
+
+                        for (var i in hids) {
+                            if (hids[i].product == "ONLYKEY") {
+                                if (hids[i].interface == hid_interface) {
+                                    return hids[i];
+                                }
+                            }
+                        }
+                    }
+
+                    function sendMessage(com, options) {
+
+                        var msgId = typeof options.msgId === 'string' ? options.msgId.toUpperCase() : null;
+                        var slotId = typeof options.slotId === 'number' || typeof options.slotId === 'string' ? options.slotId : null;
+                        var contents = typeof options.contents === 'number' || (options.contents && options.contents.length) ? options.contents : '';
+
+                        var reportId = 0;
+
+                        var bytes = [].concat(messageHeader);
+
+                        bytes.push(messages[msgId]);
+
+                        var messageA, temporary;
+
+                        for (var i = 0; i < contents.length; i++) {
+                            if (typeof contents[i] == "string")
+                                contents[i] = parseInt(hexStrToDec(contents[i]), 10);
+                            else
+                                contents[i] = contents[i];
+                        }
+
+                        if (!contents) {
+
+                            if (slotId !== null) {
+                                bytes.push(slotId);
+                            }
+                            messageA = Array.from(bytes);
+                            temporary = [].concat(messageA);
+                            for (; 64 > temporary.length;) {
+                                temporary.push(0);
+                            }
+                            com.write([reportId].concat(temporary));
+                        }
+                        else {
+                            messageA = Array.from(bytes);
+                            if (contents.length > 57) {
+                                var chunkLen = (64 - messageA.length) - 2;
+                                var i, j, chunk = chunkLen;
+                                for (i = 0, j = contents.length; i < j; i += chunk) {
+                                    var _chunk = contents.slice(i, i + chunk);
+
+                                    temporary = [].concat(messageA).concat([slotId, _chunk.length < chunkLen ? _chunk.length : 255]).concat(_chunk);
+
+                                    for (; 64 > temporary.length;) {
+                                        temporary.push(0);
+                                    }
+
+                                    com.write([reportId].concat(temporary));
+                                }
+                            }
+                            else {
+                                if (slotId !== null) {
+                                    bytes.push(slotId);
+                                }
+                                messageA = Array.from(bytes);
+                                temporary = [].concat(messageA).concat(contents);
+                                com.write([reportId].concat(temporary));
+                            }
+
+                        }
+                    }
+
+                    function setTime(done) {
+
+
+                        var hid = findHID(2);
+
+                        if (hid) {
+                            var com = new nodeHID.HID(hid.path);
+                            com.path = hid.path;
+
+                            com.on("data", function(msg) {
+                                var msg_string = bytes2string(msg);
+
+                                // console.log("handleMessage", msg, msg_string);
+                                if (msg_string == "INITIALIZED")
+                                    console.log("OnlyKey Locked");
+                                else if (msg_string.split("v")[0] == "UNLOCKED") {
+                                    console.log("OnlyKey UnLock... Time Set!");
+                                    if (done) done();
+                                }
+                                com.close();
+
+                            });
+
+
+                            var currentEpochTime = Math.round(new Date().getTime() / 1000.0).toString(16);
+                            // console.info("Setting current epoch time =", currentEpochTime);
+                            var timeParts = currentEpochTime.match(/.{2}/g);
+                            var options = {
+                                contents: timeParts,
+                                msgId: 'OKSETTIME'
+                            };
+                            sendMessage(com, options);
+
+                            //console.log(hid);
+                        }
+                        else {
+                            console.log("onlykey not detected");
+                        }
+
+                    }
+
+                    function getPub(seed, done) {
+
+
+                        var hid = findHID(2);
+
+                        if (hid) {
+                            var com = new nodeHID.HID(hid.path);
+                            com.path = hid.path;
+
+                            com.on("data", function(msg) {
+
+                                msg = Array.from(msg);
+                                console.log("full-msg", msg)
+                                msg = msg.splice(0, 32);
+                                msg = Buffer.from(msg);
+
+                                com.close();
+
+                                console.log(JSON.stringify(Buffer.from(msg)))
+                                if (done)
+                                    done(msg.toString("hex"));
+
+                            });
+                            var slot = 132; //argv.slot ? parseInt(argv.slot, 10) : 132;
+                            var hash;
+
+                            if (slot == 132) {
+                                hash = $crypto.createHash('sha256').update(seed).digest();
+                            }
+                            else hash = '';
+                            hash = Array.from(hash);
+
+                            hash = [1].concat(hash);
+
+                            var options = {
+                                contents: hash,
+                                slotId: parseInt(slot, 10),
+                                msgId: 'OKGETPUBKEY'
+                            };
+
+                            sendMessage(com, options);
+
+                        }
+                        else {
+                            console.log("onlykey not detected");
+                        }
+
+                    }
+
+                    function sign(data, done) {
+
+
+                        var hid = findHID(2);
+
+                        if (hid) {
+                            var com = new nodeHID.HID(hid.path);
+                            com.path = hid.path;
+
+                            com.on("data", function(msg) {
+
+                                if (msg.toString("utf8").indexOf("Error device locked") == 0)
+                                    return;
+
+                                console.log("res", msg.length, JSON.stringify(Buffer.from(msg)));
+                                msg = Array.from(msg);
+
+                                msg = msg.splice(0, 64);
+                                msg = Buffer.from(msg);
+
+                                com.close();
+
+                                if (done)
+                                    done(msg, data);
+
+                            });
+
+                            var slot = 201; //argv.slot ? parseInt(argv.slot, 10) : 201;
+
+                            var hash = data.indata; //$crypto.createHash('sha256').update(data.indata).digest();
+                            var blob = $crypto.createHash('sha256').update("localhost").digest(); //.toString("hex");
+
+
+                            hash = Array.from(hash);
+                            hash = [].concat(hash);
+                            blob = Array.from(blob); //.slice(0,16);
+                            blob = [].concat(blob);
+
+                            var options = {
+                                contents: [].concat(hash).concat(blob),
+                                slotId: parseInt(slot, 10),
+                                msgId: 'OKSIGN'
+                            };
+
+                            sendMessage(com, options);
+
+                        }
+                        else {
+                            console.log("onlykey not detected");
+                        }
+
+                    }
+
+                })
+            }, 3000);
+
+        })
+    </script>
+</body>
+
+</html>

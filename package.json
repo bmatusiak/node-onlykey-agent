@@ -2,11 +2,15 @@
   "name": "onlykey-agent",
   "version": "1.0.0",
   "description": "",
-  "main": "AGENT-PROTOCOL.js",
+  "main": "index.html",
   "dependencies": {
+    "@trustcrypto/node-onlykey": "file:node-onlykey",
     "ctype": "^0.5.5",
+    "gun": "git+https://github.com/amark/gun.git",
     "minimist": "^1.2.5",
-    "node-hid": "^2.1.1"
+    "node-hid": "^2.1.1",
+    "simple-peer": "^9.11.0",
+    "wrtc": "^0.4.7"
   },
   "devDependencies": {},
   "scripts": {
