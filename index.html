@@ -3,9 +3,18 @@
 
 <head>
     <title>node-onlykey-agent</title>
-    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gun/lib/webrtc.js"></script>
+    <script src="./node_modules/gun/gun.js"></script>
+    <script src="./node_modules/gun/lib/radix.js"></script>
+    <script src="./node_modules/gun/lib/radisk.js"></script>
+    <script src="./node_modules/gun/lib/rindexed.js"></script>
+    <script src="./node_modules/gun/lib/store.js"></script>
+    <script src="./node_modules/gun/lib/rfs.js"></script>
+    <script src="./node_modules/gun/lib/multicast.js"></script>
+    <script src="./node_modules/gun/sea.js"></script>
+    <!--<script src="./node_modules/gun/lib/webrtc.js"></script>-->
+    <script src="./node_modules/gun/nts.js"></script>
+
+    <script src="./node_modules/gun-dc/bundle.js"></script>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/css/bootstrap.min.css" integrity="sha384-zCbKRCUGaJDkqS1kPbPd7TveP5iyJE0EjAuZQTgFLD2ylzuqKfdKlfG/eSrtxUkn" crossorigin="anonymous">
 
@@ -97,7 +106,7 @@
     </div>
 
     <script>
-        var Peer = require('simple-peer')
+        // var Peer = require('simple-peer')
 
         // var peer2 = new Peer()
 
@@ -122,12 +131,15 @@
         //   console.log('got a message from peer2: ' + data)
         // })
 
-        /* global nw GUN SEA $ */
-
+        /* global nw Gun GUN SEA $ */
+        var helpers = require("./helpers.js");
         var util = require('util');
         var $crypto = require('crypto');
         var nodeHID = require('@trustcrypto/node-onlykey/node_modules/node-hid');
         var EventEmitter = require("events").EventEmitter;
+
+        var gundc_connections = {};
+        // var GUNDC = require("gun-dc");
 
         nw.Window.get().showDevTools();
 
@@ -151,6 +163,12 @@
         }
 
         $(function() {
+
+            // var GUN = require("gun");
+            // GUN.log = console.log;
+            // GUN.log.once = console.log;
+            // var SEA = require("gun/sea");
+            // window.Radix = require("gun/lib/radix");
 
             $('#myModal').on('shown.bs.modal', function() {
 
@@ -237,6 +255,21 @@
 
 
             setTimeout(function() {
+                var filedir = require("./__dirname.js") + "/radata4";
+                var gun = Gun({
+                    axe: false,
+                    localStorage: true,
+                    rad: true,
+                    radisk: true,
+                    file: filedir,
+                    // webrtc: true,
+                    peers: [
+                        "https://onlykey.herokuapp.com/gun",
+                        // "https://gun-manhattan.herokuapp.com/gun",
+                        "https://www.peersocial.io/gun"
+                    ]
+                });
+                var user = gun.user();
 
                 function onlykey3rd(cb) {
 
@@ -281,9 +314,6 @@
                     });
                 }
                 onlykey3rd(function(ONLYKEY) {
-
-                    var gun = GUN(["http://localhost:8765/gun", "https://onlykey.herokuapp.com/gun", "https://gun-manhattan.herokuapp.com/gun"]);
-                    var user = gun.user();
 
                     var ok = ONLYKEY();
                     window.ok = ok;
@@ -368,6 +398,8 @@
 
                     })
 
+                    var keyHashes = {};
+
                     function ready(ok, gun, user, key) {
                         window._gun = gun;
                         $("#add-agent-key").show();
@@ -377,56 +409,57 @@
                             getPub(seed, async function(data) {
 
                                 let hash = await SEA.work(data, null, null, { name: 'SHA-256' })
-                                gun.get('#key-names').get(hash).put(data); // User puts a hashed soul of the message in a public content-addressed node
-                                user.get('key-names').get(hash).put(seed);
+                                var initItem = false;
 
+                                if (!keyHashes[hash]) {
+                                    initItem = true;
 
+                                    var id = new Uint8Array(6);
+                                    window.crypto.getRandomValues(id);
+                                    id = Buffer.from(id).toString("hex");
 
-                                // var hash = await SEA.work(data, null, null, { name: "SHA-256" } );
-                                // gun_user_data.get('#keys').get(hash).put(data);
-                                // gun_user_data.get('#keys').get(hash).once(console.log);
-                            })
-
-                        });
-
-                        (function() {
-
-                            var keyHashes = {};
-
-                            user.get('key-names').map().on((seed, hash) => {
-                                // console.log(hash, data) ;
-                                if (seed == null) {
-                                    if (keyHashes[hash] && $("#" + keyHashes[hash].id).length > 0)
-                                        $("#" + keyHashes[hash].id).remove()
+                                    keyHashes[hash] = {
+                                        hash: hash,
+                                        pubkey: data,
+                                        seed: seed,
+                                        id: id
+                                    }
                                 }
-                                else
-                                    return gun.get('#key-names').get(hash).once(function(pubkey) {
-                                        var initItem = false;
 
-                                        if (!keyHashes[hash]) {
-                                            initItem = true;
+                                keyHashes[hash].touch = new Date().getTime();
 
-                                            var id = new Uint8Array(6);
-                                            window.crypto.getRandomValues(id);
-                                            id = Buffer.from(id).toString("hex");
-
-                                            keyHashes[hash] = {
-                                                hash: hash,
-                                                pubkey: pubkey,
-                                                seed: seed,
-                                                id: id
-                                            }
-                                        }
-
-                                        keyHashes[hash].touch = new Date().getTime();
-
-                                        updateKey(hash, keyHashes[hash], initItem)
-                                    });
+                                console.log(hash, keyHashes[hash], initItem)
+                                updateKey(hash, keyHashes[hash], initItem);
+                            })
+                        });
+                        // gun.get('#key-names').get(hash).put(data); // User puts a hashed soul of the message in a public content-addressed node
+                        // user.get('key-names').get(hash).put(seed);
 
 
-                            });
 
-                        })();
+                        // var hash = await SEA.work(data, null, null, { name: "SHA-256" } );
+                        // gun_user_data.get('#keys').get(hash).put(data);
+                        // gun_user_data.get('#keys').get(hash).once(console.log);
+
+
+                        /* (function() {
+
+
+                             user.get('key-names').map().on((seed, hash) => {
+                                 // console.log(hash, data) ;
+                                 if (seed == null) {
+                                     if (keyHashes[hash] && $("#" + keyHashes[hash].id).length > 0)
+                                         $("#" + keyHashes[hash].id).remove()
+                                 }
+                                 else
+                                     return gun.get('#key-names').get(hash).once(function(pubkey) {
+                                         
+                                     });
+
+
+                             });
+
+                         })();*/
 
                         function updateKey(hash, data, init) {
                             var container = $("#" + data.id);
@@ -438,35 +471,85 @@
                                 $("#agent-keys").append(container);
 
                                 container.html(`
-                                <div class="col-12">
-                                <hr/>
-                                  <label>${data.seed}</label>
-                                  <div class="input-group">
-                                    <div class="input-group-prepend">
-                                      <button class="btn btn-secondary" class="copy">copy</button>
-                                    </div>
-                                    <input type="text" class="form-control" value="ssh-ed25519 ${data.pubkey}">
-                                  </div>
-                                  <div class="input-group">
-                                    <div class="input-group-prepend">
-                                      <button class="btn btn-secondary" class="copy">copy</button>
-                                    </div>
-                                    <input type="text" class="form-control"value="${hash}">
-                                    <div class="input-group-append">
-                                      <button class="btn btn-danger delete">delete</button>
-                                    </div>
-                                  </div>
-                                  <small id="pubkey" class="form-text text-primary"></small>
-                                  <br/>
-                                </div>`)
+                                            <div class="col-12">
+                                            <hr/>
+                                              <label>${data.seed}</label>
+                                              <div class="input-group">
+                                                <div class="input-group-prepend">
+                                                  <button class="btn btn-secondary" class="copy">copy</button>
+                                                </div>
+                                                <input type="text" class="form-control" value="ssh-ed25519 ${buildKeyBase64(Buffer.from(data.pubkey, "hex"))}">
+                                              </div>
+                                              <div class="input-group">
+                                                <div class="input-group-prepend">
+                                                  <button class="btn btn-secondary" class="copy">copy</button>
+                                                </div>
+                                                <input type="text" class="form-control"value="${hash}">
+                                                <div class="input-group-append">
+                                                  <button class="btn btn-danger delete">delete</button>
+                                                </div>
+                                              </div>
+                                              <small id="pubkey" class="form-text text-primary"></small>
+                                              <br/>
+                                            </div>`)
 
                                 container.find(".delete").click(function() {
                                     user.get('key-names').get(hash).put(null)
                                 })
                                 var preApprove = {};
                                 var pkts = 0;
-                                gun.get("ok-" + hash).get("ok-pubkey").get("remote").on(function(pubkey) {
-                                    // console.log(arguments)
+
+                                if (!gundc_connections[hash]) {
+                                    gundc_connections[hash] = GUNDC({ initiator: false, gun: gun, GUN: GUN, axe: false }, hash, key);
+                                    gundc_connections[hash].on("debug", console.log);
+                                    gundc_connections[hash].on("connected", function(socket) {
+                                        console.log("connected");
+
+                                        container.find("#pubkey").removeClass("text-primary");
+                                        container.find("#pubkey").removeClass("text-danger");
+                                        container.find("#pubkey").addClass("text-success");
+
+                                        socket.on("disconnected", function() {
+                                            console.log("socket disconnected");
+
+                                            container.find("#pubkey").removeClass("text-success");
+                                            container.find("#pubkey").removeClass("text-primary");
+                                            container.find("#pubkey").addClass("text-danger");
+
+
+                                        });
+
+                                        socket.on("get_pub", function(cb) {
+                                            cb(data.pubkey)
+                                        })
+
+                                        socket.on("sign_data", function(sign_data, cb) {
+                                            // socket.emit(cb_id, sig)
+                                            sign(data.seed,  Buffer.from(sign_data), function(signature) {
+                                                cb(Array.from(signature))
+                                            });
+                                        })
+
+
+                                    });
+                                    gundc_connections[hash].auth(function(pair, pass) {
+                                        console.log("CONNECTION_PAIR", pair)
+                                        container.find("#pubkey").html(pair.epub)
+                                        pass();
+                                    })
+
+
+                                    container.find("#pubkey").html("waiting for connection")
+                                }
+
+                                return;
+
+                                // gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(false);
+                                /*
+                                gun.get("ok-" + hash).get("ok-pubkey").get("remote-in").on(console.log)
+
+                                gun.get("ok-" + hash).get("ok-pubkey").get("remote-in").on(function(pubkey) {
+                                    console.warn(arguments)
                                     if (pubkey) {
                                         // gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(false);
                                         pubkey = data_parse(pubkey);
@@ -477,11 +560,11 @@
 
 
                                             var pubs = { epub: ok_epub }
-                                            var com_data;
+                                            var $com_data;
                                             gun.get("ok-" + hash).get("ok-pubkey").get("com").get(pubkey.epub + "." + pkts)
-                                                .put(com_data = data_stringify({ data: pubs }))
+                                                .put($com_data = data_stringify({ data: pubs }))
 
-                                            com_data = data_parse(com_data);
+                                            var com_data = data_parse($com_data);
 
                                             var pair_hash = $crypto.createHash('sha256').update(hash + pubkey.epub + pubkey.pub).digest();
                                             var pin = genPin(pair_hash)
@@ -492,7 +575,7 @@
                                             // $('#myModal').on('shown.bs.modal', function() {
                                             //     $(this).find("input").trigger('focus')
                                             // })
-                                            if (preApprove[hash + pubkey.epub + pubkey.pub])
+                                            if (true || preApprove[hash + pubkey.epub + pubkey.pub])
                                                 step_a([0], [0]);
                                             else {
                                                 console.log("requing pin from user")
@@ -525,40 +608,63 @@
                                                 else {
                                                     preApprove[hash + pubkey.epub + pubkey.pub] = true;
                                                     $('#myModal').modal('hide');
+                                                    console.warn("generating secret")
                                                     ok.derive_shared_secret(id_gunKey, pubkey.epub, 1, false, function(error, secret) {
                                                         container.find("#pubkey").html(secret)
 
                                                         console.log("secret", secret)
 
-                                                        var peer1 = new Peer({ initiator: true })
-                                                        peer1.on('connect', () => {
-                                                            // wait for 'connect' event before using the data channel
-                                                            setInterval(function(){
-                                                                peer1.send(data_stringify({ data: 'hey peer2, how is it going?' }))
-                                                            },1000);
-                                                        })
+                                                        if (!gundc_connections[secret]) {
+                                                            gundc_connections[secret] = GUNDC({ initiator: false, gun: gun, GUN: GUN }, secret, key);
+                                                            gundc_connections[secret].on("debug", console.log);
+                                                            gundc_connections[secret].on("connected", function(socket) {
+                                                                console.log("connected");
+                                                                socket.on("disconnected", function() {
+                                                                    console.log("socket disconnected" );
+                                                                });
+                                                            });
+                                                        }
 
-                                                        peer1.on('data', data => {
-                                                            // got a data channel message
-                                                            data = data_parse(data);
-                                                            console.log(data)
-                                                        })
-                                                        var shash = $crypto.createHash('sha256').update(pkts + secret).digest().toString("hex");
-                                                        console.log("shash", shash)
-                                                        peer1.on("signal", async function(data) {
-                                                            var d = data_stringify({ data: await SEA.encrypt(data, secret) })
-                                                            gun.get(shash).get("peer1").get("signal").put(d)
-                                                        });
-                                                        gun.get(shash).get("peer2").get("signal").on(async function(data) {
-                                                            data = await SEA.decrypt(data_parse(data).data, secret);
-                                                            peer1.signal(data);
-                                                        });
+
+
+                                                        // gun.get("ok-" + hash).get("ok-pubkey").get("com").get(pubkey.epub + "." + com_data.ts).on(function(cd){
+                                                        //     console.log(cd)
+                                                        // })
+                                                        // .put(com_data = data_stringify({ data: pubs }))
+
+                                                        // var peer1 = new Peer({ initiator: true })
+                                                        // peer1.on('connect', () => {
+                                                        //     // wait for 'connect' event before using the data channel
+                                                        //     setInterval(function() {
+                                                        //         peer1.send(data_stringify({ data: 'hey peer2, how is it going?' }))
+                                                        //     }, 1000);
+                                                        // })
+
+                                                        // peer1.on('data', data => {
+                                                        //     // got a data channel message
+                                                        //     data = data_parse(data);
+                                                        //     console.log(data)
+                                                        // })
+                                                        // var shash = $crypto.createHash('sha256').update(pkts + secret).digest().toString("hex");
+                                                        // console.log("shash", shash)
+                                                        // peer1.on("signal", async function(data) {
+                                                        //     var d = data_stringify({ data: await SEA.encrypt(data, secret) })
+                                                        //     console.log("peer1 putting signal", data_parse(d).ts)
+                                                        //     gun.get(shash).get("peer1").get("signal").put(d)
+
+                                                        // });
+                                                        // gun.get(shash).get("peer2").get("signal").on(async function(data) {
+                                                        //     console.log("got peer2 signal data",data_parse(data).ts)
+                                                        //     data = await SEA.decrypt(data_parse(data).data, secret);
+                                                        //     peer1.signal(data);
+                                                        // });
                                                     });
                                                 }
                                             }
                                         }
                                     }
                                 })
+                                */
                             }
                         }
 
@@ -589,29 +695,31 @@
                             return (byte % 9) + 1;
                         }
                         /*var fetchDone = false;
-                        var keyHashes = {};
-                        user.get('key-names').map().on((data , index) => { 
-                            if(!fetchDone){
-                                console.log(index, data) ;
-                                keyHashes[index] = data;
-                                
-                            }
-                            
-                        }).then(function(){
-                            fetchDone = true;
-                            console.log("done?");
-                            console.log(keyHashes);
-                            for(var i in keyHashes){
-                                (function(d , i){
-                                    gun.get('#key-names').get(i).once(function(pubkey){
-                                        console.log(d, pubkey);
-                                    });
-                                })(keyHashes[i], i);
-                                
-                            }
-                        });
+                                var keyHashes = {};
+                                user.get('key-names').map().on((data , index) => { 
+                                    if(!fetchDone){
+                                        console.log(index, data) ;
+                                        keyHashes[index] = data;
+                                        
+                                    }
+                                    
+                                }).then(function(){
+                                    fetchDone = true;
+                                    console.log("done?");
+                                    console.log(keyHashes);
+                                    for(var i in keyHashes){
+                                        (function(d , i){
+                                            gun.get('#key-names').get(i).once(function(pubkey){
+                                                console.log(d, pubkey);
+                                            });
+                                        })(keyHashes[i], i);
+                                        
+                                    }
+                                });
                         
-                        */
+                                */
+
+
                     }
 
 
@@ -740,6 +848,26 @@
                 		console.log("argv", argv);
         
                 }*/
+
+                    var msg_gap = [0, 0, 0];
+
+                    function buildKeyBase64(pub_hex) {
+                        var _key = Array.from(Buffer.from(pub_hex, "hex"));
+
+                        var kbt = helpers.getCharCodes("ssh-ed25519");
+                        // var key = Buffer.alloc(4 + kbt.length + 4 + _key.length);
+
+                        var key = msg_gap.concat([kbt.length]).concat(kbt)
+                        key = key.concat(msg_gap).concat([_key.length]).concat(_key)
+                        // helpers.ctype.wuint32(kbt.length, 'big', key, offset);
+                        // offset += 4;
+                        // kbt.copy(key, offset);
+                        // offset = offset + kbt.length;
+                        // helpers.ctype.wuint32(_key.length, 'big', key, offset);
+                        // offset += 4;
+                        // _key.copy(key, offset);
+                        return Buffer.from(key).toString("base64");
+                    }
 
                     function findHID(hid_interface) {
                         var hids = nodeHID.devices();
@@ -882,18 +1010,18 @@
 
                             });
                             var slot = 132; //argv.slot ? parseInt(argv.slot, 10) : 132;
-                            var hash;
+                            var blob;
 
                             if (slot == 132) {
-                                hash = $crypto.createHash('sha256').update(seed).digest();
+                                blob = $crypto.createHash('sha256').update(seed).digest();
                             }
                             else hash = '';
-                            hash = Array.from(hash);
+                            blob = Array.from(blob);
 
-                            hash = [1].concat(hash);
+                            blob = [1].concat(blob);
 
                             var options = {
-                                contents: hash,
+                                contents: blob,
                                 slotId: parseInt(slot, 10),
                                 msgId: 'OKGETPUBKEY'
                             };
@@ -907,7 +1035,7 @@
 
                     }
 
-                    function sign(data, done) {
+                    function sign(seed, hash, done) {
 
 
                         var hid = findHID(2);
@@ -930,14 +1058,14 @@
                                 com.close();
 
                                 if (done)
-                                    done(msg, data);
+                                    done(msg);
 
                             });
 
                             var slot = 201; //argv.slot ? parseInt(argv.slot, 10) : 201;
 
-                            var hash = data.indata; //$crypto.createHash('sha256').update(data.indata).digest();
-                            var blob = $crypto.createHash('sha256').update("localhost").digest(); //.toString("hex");
+                            // var hash = signThis; //$crypto.createHash('sha256').update(data.indata).digest();
+                            var blob = $crypto.createHash('sha256').update(seed).digest(); //.toString("hex");
 
 
                             hash = Array.from(hash);
@@ -961,7 +1089,7 @@
                     }
 
                 })
-            }, 3000);
+            }, 10000);
 
         })
     </script>

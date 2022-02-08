@@ -7,6 +7,7 @@
     "@trustcrypto/node-onlykey": "file:node-onlykey",
     "ctype": "^0.5.5",
     "gun": "git+https://github.com/amark/gun.git",
+    "gun-dc": "git+https://github.com/bmatusiak/gun-direct-connect-simple-peer.git",
     "minimist": "^1.2.5",
     "node-hid": "^2.1.1",
     "simple-peer": "^9.11.0",

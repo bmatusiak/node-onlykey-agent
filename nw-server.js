@@ -5,15 +5,32 @@ var fs = require('fs');
 var util = require('util');
 var GUN = require('gun');
 var SEA = require('gun/sea');
-var webrtc = require('gun/lib/webrtc');
+// var webrtc = require('gun/lib/webrtc');
+
+var GUNDC = require("gun-dc");
 
 var $crypto = require('crypto');
 
 var helpers = require('./helpers.js');
 
-const server = require('http').createServer().listen(8765);
+var wrtc = require("wrtc");
 
-var gun = GUN({ web: server, peers: ["http://localhost:8765/gun", "https://onlykey.herokuapp.com/gun", "https://gun-manhattan.herokuapp.com/gun"] });
+// const server = require('http').createServer().listen(8765);
+
+var gun = GUN({
+    // RTCPeerConnection: wrtc.RTCPeerConnection,  
+    // RTCSessionDescription: wrtc.RTCSessionDescription,  
+    // RTCIceCandidate: wrtc.RTCIceCandidate,  
+    axe: false,
+    web: false,
+    file: require("./__dirname.js") + "/radata2",
+    peers: [
+        "https://onlykey.herokuapp.com/gun",
+        // "https://gun-manhattan.herokuapp.com/gun",
+        "https://www.peersocial.io/gun"
+    ]
+    /*, peers: ["https://onlykey.herokuapp.com/gun", "https://gun-manhattan.herokuapp.com/gun"]*/
+});
 
 global._gun = gun;
 
@@ -23,130 +40,175 @@ var com_keys_path = process.env.HOME + "/.ssh/sea_pair.json";
 if (fs.existsSync(com_keys_path))
     com_keys = JSON.parse(fs.readFileSync(com_keys_path, { encoding: 'utf8', flag: 'r' }));
 
-if (!com_keys) {
-    SEA.pair().then(function(pair) {
-        com_keys = pair;
-        fs.writeFileSync(com_keys_path, JSON.stringify(com_keys));
-        ready()
+var hash = "p9O63w3zcXFJKJ2ES0iHFTzely/eqd5w6ScsUXdYSi4="
+// + (new Date().getTime());
+var hash_alias = $crypto.createHash('sha256').update(hash).digest().toString("hex");
+
+var user = gun.user();
+
+var gundc_connections = {};
+
+function initUser(next) {
+    // gun.get("~@"+hash_alias).once(function($user){
+    //     if(!$user){
+
+    //         user.create(hash_alias, hash, function(ack) {
+    //             // console.log(ack);
+    //             console.log("startup-create")
+    //             global._user = user;
+    //             next(user)
+    //         });
+
+    //     }else{
+
+    // user.auth(hash_alias, hash, function(ack) {
+    user.auth(com_keys, function(ack) {
+        // console.log(ack);
+        console.log("startup-login")
+        global._user = user;
+        next(user)
     });
+    //     }
+    // })
 }
-else ready();
 
-var Peer = require('simple-peer');
-var wrtc = require('wrtc');
+function startup(next) {
 
-// var peer1 = new Peer({ initiator: true, wrtc: wrtc });
-// var peer2 = new Peer({ wrtc: wrtc });
-//  peer2.on('connect', () => {
-//       // wait for 'connect' event before using the data channel
-//       peer2.send('hey peer1, how is it going?')
-// })
+    if (!com_keys) {
+        SEA.pair().then(function(pair) {
+            com_keys = pair;
+            fs.writeFileSync(com_keys_path, JSON.stringify(com_keys));
+            initUser(next)
+        });
+    }
+    else initUser(next);
 
-// peer2.on('data', data => {
-//   // got a data channel message
-//   console.log('got a message from peer2: ' + data)
-// })
 
-/*peer1.on('signal', data => {
-  // when peer1 has signaling data, give it to peer2 somehow
-  peer2.signal(data)
-})
+}
 
-peer2.on('signal', data => {
-  // when peer2 has signaling data, give it to peer1 somehow
-  peer1.signal(data)
-})
 
-peer1.on('connect', () => {
-  // wait for 'connect' event before using the data channel
-  peer1.send('hey peer2, how is it going?')
-})
+function ready(user) {
+    // console.log("ready")
+    // var hash = "zar0gW9JWlOvvNkonTwGgXZIYUtdQ4k/B4DlC9x+2Zw=";
 
-peer2.on('data', data => {
-  // got a data channel message
-  console.log('got a message from peer1: ' + data)
-})
-*/
-// var peer2;
-function ready() {
+    function setup(pair) {
+        var pubs = { epub: pair.epub, pub: pair.pub }
 
-    fs.unlink(socket_path, function() {
-        var hash = "zar0gW9JWlOvvNkonTwGgXZIYUtdQ4k/B4DlC9x+2Zw=";
+        // var pin = genPin(pair.epub + pair.pub)
 
-        function setup(pair) {
-            var pubs = { epub: pair.epub, pub: pair.pub }
+        // console.log("pin", pin)
+        console.log(pubs);
+        // var pubkey = data_stringify({ data: pubs });
 
-            var pin = genPin(pair.epub + pair.pub)
+        if (!gundc_connections[hash]) {
+            gundc_connections[hash] = GUNDC({ wrtc: wrtc, initiator: true, gun: gun, GUN: GUN, axe: false }, hash, pair);
+            gundc_connections[hash].on("debug", console.log);
+            gundc_connections[hash].on("connected", function(socket) {
+                console.log("connected");
+                socket.on("disconnected", function() {
+                    console.log("socket disconnected");
+                });
+                
+                // var callback_id = $crypto.randomInt(0, 100000000000).toString();
+                // socket.emit("get_pub", callback_id);
+                // socket.on(callback_id, function(data) {
+                //     console.log(data)
+                //     startServer(data, socket)
+                // });
+                
+                socket.emit("get_pub", function(data) {
+                    console.log(data)
+                    startServer(data, socket)
+                });
 
-            console.log("pin", pin)
-            console.log(pubs);
-            var pubkey = data_stringify({ data: pubs });
-
-            gun.get("ok-" + hash).get("ok-pubkey").get("com").get(pubs.epub + "." + data_parse(pubkey).ts).on(async function(data) {
-                if (data) {
-                     gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(null);
-                     
-                    var data_ts = data_parse(data).ts;
-                    data = data_parse(data).data;
-                    console.log(data);
-
-                    var sec = await SEA.secret(data.epub, com_keys)
-
-                    console.log("secret", sec)
-                    // if(!peer2){
-                    var peer2 = new Peer({ wrtc: wrtc });
-                    peer2.on('connect', () => {
-                        // wait for 'connect' event before using the data channel
-                        
-                        setInterval(function(){
-                            peer2.send(data_stringify({data:'hey peer1, how is it going?'}))    
-                        },1000)
-                    })
-
-                    peer2.on('data', data => {
-                        // got a data channel message
-                        data = data_parse(data);
-                        console.log(data)
-                    })
-                    var shash = $crypto.createHash('sha256').update(data_parse(pubkey).ts + sec).digest().toString("hex");
-                    console.log("shash", shash)
-                    gun.get(shash).get("peer1").get("signal").on(async function(data) {
-                        data = await SEA.decrypt(data_parse(data).data, sec);
-                        peer2.signal(data)
-
-                    })
-
-                    peer2.on("signal", async function(data) {
-                        var d = data_stringify({ data: await SEA.encrypt(data, sec) })
-                        gun.get(shash).get("peer2").get("signal").put(d)
-                    });
-                    // }
-                    var pair_hash = $crypto.createHash('sha256').update(hash + pair.epub + pair.pub).digest();
-                    var pin = genPin(pair_hash)
-
-                    console.log("pin", pin)
-                }
             });
-
-            gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(pubkey);
-
-
+            gundc_connections[hash].auth(function(pair, pass) {
+                console.log("CONNECTION_PAIR", pair)
+                pass();
+            })
         }
-        // setInterval(setup,1000)
-        setup(com_keys);
+        return;
+        /*
+                    gun.get("ok-" + hash).get("ok-pubkey").get("com").get(pubs.epub + "." + data_parse(pubkey).ts).on(async function(data) {
+                        if (data) {
+                            //  gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(false);
 
-        // setTime(function() {
-        //   getPub(function(pub) {
-        //     console.log(Buffer.from(pub, "hex").toString("base64"))
-        //     startServer(pub)
-        //   })
+                            var data_ts = data_parse(data).ts;
+                            data = data_parse(data).data;
+                            console.log(data);
 
-        // })
+                            var secret = await SEA.secret(data.epub, com_keys)
+
+                            console.log("secret", secret)
+
+                            if (!gundc_connections[secret]) {
+                                gundc_connections[secret] = GUNDC({ wrtc: wrtc, initiator: true, gun: gun, GUN: GUN }, secret, pair);
+                                gundc_connections[secret].on("debug", console.log);
+                                gundc_connections[secret].on("connected", function(socket) {
+                                    console.log("connected");
+                                    socket.on("disconnected", function() {
+                                        console.log("socket disconnected");
+                                    });
+                                });
+                            }
+                            // if(!peer2){
+                            
+                            // }
+                            var pair_hash = $crypto.createHash('sha256').update(hash + pair.epub + pair.pub).digest();
+                            var pin = genPin(pair_hash)
+
+                            console.log("pin", pin)
+                        }
+                    });
 
 
-    });
+                    // gun.get("ok-" + hash).get("ok-pubkey").get("remote").put(pubkey,console.log);
+                    // setTimeout(function(){
+                    gun.get("ok-" + hash).get("ok-pubkey").get("remote-in").put(pubkey);
+                    // },5000)
+        */
+
+    }
+    // setInterval(setup,1000)
+    setup(com_keys);
+
+    // setTime(function() {
+    //   getPub(function(pub) {
+    //     console.log(Buffer.from(pub, "hex").toString("base64"))
+    //     startServer(pub)
+    //   })
+
+    // })
+
+
 
 }
+
+
+process.stdin.resume(); //so the program will not close instantly
+
+function exitHandler(options, exitCode) {
+    // if (options.cleanup){
+    //   console.log('clean');
+    // } 
+    // if (exitCode || exitCode === 0)  console.log("exitCode",exitCode);
+    if (options.exit) {
+        for (var i in gundc_connections)
+            gundc_connections[i].destroy();
+        setTimeout(process.exit, 1000);
+        // process.exit();
+    }
+}
+
+//do something when app is closing
+process.on('exit', exitHandler.bind(null, { cleanup: true }));
+//catches ctrl+c event
+process.on('SIGINT', exitHandler.bind(null, { exit: true }));
+// catches "kill pid" (for example: nodemon restart)
+process.on('SIGUSR1', exitHandler.bind(null, { exit: true }));
+process.on('SIGUSR2', exitHandler.bind(null, { exit: true }));
+//catches uncaught exceptions
+process.on('uncaughtException', exitHandler.bind(null, { exit: true }));
 
 // pin = [get_pin(pin_hash[0]), get_pin(pin_hash[15]), get_pin(pin_hash[31])];
 
@@ -222,7 +284,23 @@ function data_parse(data) {
     SSH_AGENT_RSA_SHA2_512                          4
 */
 
-function startServer(pub) {
+function buildKeyBase64(pub_hex) {
+    var _key = Buffer.from(pub_hex, "hex");
+    var offset = 0;
+    var kbt = Buffer.from(helpers.getCharCodes("ssh-ed25519"));
+    var key = Buffer.alloc(4 + kbt.length + 4 + _key.length);
+
+    helpers.ctype.wuint32(kbt.length, 'big', key, offset);
+    offset += 4;
+    kbt.copy(key, offset);
+    offset = offset + kbt.length;
+    helpers.ctype.wuint32(_key.length, 'big', key, offset);
+    offset += 4;
+    _key.copy(key, offset);
+    return key.toString("base64");
+}
+
+function startServer(pub, socket) {
 
     function route(stream) {
         //console.log('client connected');
@@ -305,46 +383,27 @@ function startServer(pub) {
                         case helpers.PROTOCOL.SSH_AGENTC_REQUEST_RSA_IDENTITIES:
                             break;
                         case helpers.PROTOCOL.SSH2_AGENTC_REQUEST_IDENTITIES:
-                            console.log("list pubkeys")
-                            var kbt = Buffer.from(helpers.getCharCodes("ssh-ed25519"));
+                            console.log("SSH2_AGENTC_REQUEST_IDENTITIES", len, type, JSON.stringify(response))
+                            // var kbt = Buffer.from(helpers.getCharCodes("ssh-ed25519"));
                             // var _key = Buffer.from("439083de2ae68fd822a5b172d299403feecb96f25e299a8129ffde012aa649e2", "hex");
-                            var _key = Buffer.from(pub, "hex");
+                            // var _key = Buffer.from(pub, "hex");
 
-                            var key = Buffer.alloc(4 + kbt.length + 4 + _key.length);
 
-                            offset = 0;
+                            var key = Buffer.from(buildKeyBase64(Buffer.from(pub, "hex")), "base64");
 
-                            helpers.ctype.wuint32(kbt.length, 'big', key, offset);
-                            offset += 4;
-                            kbt.copy(key, offset);
-                            offset = offset + kbt.length;
+                            console.log("key", key.toString("utf8"))
 
-                            // offset = _writeString(key, kbt, offset);
-                            // _writeString(key, _key, offset);
-                            // offset += 4;
-
-                            helpers.ctype.wuint32(_key.length, 'big', key, offset);
-                            offset += 4;
-                            _key.copy(key, offset);
-                            offset = offset + kbt.length;
-
-                            // var kb_c = Buffer.from("ok");
                             var request = Buffer.alloc(4 + 1 + 4 + 1 + 4 + key.length + 4);
-                            // var request = new Buffer(4 + 1 + 4 + key._raw.length + 4 + data.length + 4);
-                            // var offset = _writeHeader(request, PROTOCOL.SSH2_AGENTC_SIGN_REQUEST);
-                            // offset = _writeString(request, key._raw, offset);
-                            // offset = _writeString(request, data, offset);
-                            // ctype.wuint32(0, 'big', request, offset);
-                            // return request;
 
                             offset = helpers._writeHeader(request, helpers.PROTOCOL.SSH2_AGENT_IDENTITIES_ANSWER);
                             helpers.ctype.wuint32(1, 'big', request, offset);
                             offset += 4;
+
                             offset = helpers._writeString(request, key, offset);
-                            // offset = helpers._writeString(request, kb_c, offset);
                             helpers.ctype.wuint32(0, 'big', request, offset);
 
                             stream.write(request);
+
                             console.log("sent", request);
                             break;
                         case helpers.PROTOCOL.SSH2_AGENTC_SIGN_REQUEST:
@@ -360,32 +419,18 @@ function startServer(pub) {
                                 offset += 4 + blobkey.len;
                                 var indata = helpers._readString(response, offset);
 
-
-                                // var signature = _readString(blob, type.length + 4);
-                                var id = JSON.stringify(Array.from(indata.str)).split(",0,0,0,");
-
-                                console.log(id);
-                                id = JSON.stringify(Array.from(indata.str));
-
-                                var offset2 = 0;
-                                var hash = helpers._readString(indata.str, offset2);
-
-                                console.log(JSON.stringify(hash.str))
-
-                                // return;
-
                                 console.log("indata", JSON.stringify(indata.str));
                                 console.log("indata", indata.str.toString("utf8"));
                                 console.log("indata", indata.len);
-                                sign({
-                                    blob: blobkey.str.toString("base64"),
-                                    indata: indata.str, // <-- sign this
-                                    // signature: signature.toString('base64'),
-                                    // _raw: signature
-                                }, function(signature) {
+
+
+                                // var callback_id = $crypto.randomInt(0, 100000000000).toString();
+
+                                socket.emit("sign_data", Array.from(indata.str), function(signature) {
                                     // signature = Buffer.from(signature.toString("HEX"));
                                     // signature = Buffer.from(signature.toString("base64"));
                                     // signature = Buffer.from(signature);
+                                    signature = Buffer.from(signature)
                                     console.log("sig", signature);
                                     console.log("sig", signature.length);
                                     console.log("sig", JSON.stringify(signature.toString()));
@@ -397,22 +442,10 @@ function startServer(pub) {
                                     offset = helpers._writeString(resss, signature, offset);
 
                                     var request = Buffer.alloc(4 + 1 + 4 + resss.length);
-                                    // var request = new Buffer(4 + 1 + 4 + key._raw.length + 4 + data.length + 4);
-                                    // var offset = _writeHeader(request, PROTOCOL.SSH2_AGENTC_SIGN_REQUEST);
-                                    // offset = _writeString(request, key._raw, offset);
-                                    // offset = _writeString(request, data, offset);
-                                    // ctype.wuint32(0, 'big', request, offset);
-                                    // return request;
 
                                     offset = helpers._writeHeader(request, helpers.PROTOCOL.SSH2_AGENT_SIGN_RESPONSE);
-                                    // helpers.ctype.wuint32(signature.length, 'big', request, offset);
-                                    // offset += 4;
-                                    // offset = helpers._writeString(request, kb_c, offset);
-                                    // offset = helpers._writeString(request, signature, offset);
-                                    offset = helpers._writeString(request, resss, offset);
-                                    // offset = helpers._writeString(request, kb_c, offset);
-                                    // helpers.ctype.wuint32(0, 'big', request, offset);
 
+                                    offset = helpers._writeString(request, resss, offset);
                                     stream.write(request);
 
                                     console.log("sending response", request)
@@ -466,7 +499,11 @@ function startServer(pub) {
 
     var server = net.createServer(route);
 
-    server.listen(socket_path, function() {
-        console.log('server listening on path ' + socket_path);
+    fs.unlink(socket_path, function() {
+        server.listen(socket_path, function() {
+            console.log('server listening on path ' + socket_path);
+        });
     });
 };
+
+startup(ready);
