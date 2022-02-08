@@ -2,6 +2,8 @@ var socket_path = '/tmp/sshagent.sock';
 var net = require('net');
 var fs = require('fs');
 
+var crypto = require('crypto');
+
 var util = require('util');
 
 var helpers = require('./helpers.js');
@@ -9,7 +11,8 @@ var helpers = require('./helpers.js');
 fs.unlink(socket_path, function() {
   setTime(function() {
     getPub(function(pub) {
-      console.log(Buffer.from(pub, "hex").toString("base64"))
+      console.log("ssh-ed25519", buildKeyBase64(Buffer.from(pub, "hex")));
+      // console.log(Buffer.from(pub, "hex").toString("base64"))
       startServer(pub)
     })
 
@@ -21,6 +24,7 @@ fs.unlink(socket_path, function() {
 function hexStrToDec(hexStr) {
   return ~~(new Number('0x' + hexStr).toString(10));
 };
+
 function MissingEnvironmentVariableError(variable) {
   this.name = 'MissingEnvironmentVariableError';
   this.message = variable + ' was not found in your environment';
@@ -80,6 +84,22 @@ util.inherits(InvalidProtocolError, Error);
     SSH_AGENT_RSA_SHA2_512                          4
 */
 
+function buildKeyBase64(pub_hex) {
+  var _key = Buffer.from(pub_hex, "hex");
+  var offset = 0;
+  var kbt = Buffer.from(helpers.getCharCodes("ssh-ed25519"));
+  var key = Buffer.alloc(4 + kbt.length + 4 + _key.length);
+
+  helpers.ctype.wuint32(kbt.length, 'big', key, offset);
+  offset += 4;
+  kbt.copy(key, offset);
+  offset = offset + kbt.length;
+  helpers.ctype.wuint32(_key.length, 'big', key, offset);
+  offset += 4;
+  _key.copy(key, offset);
+  return key.toString("base64");
+}
+
 function startServer(pub) {
 
   function route(stream) {
@@ -113,25 +133,27 @@ function startServer(pub) {
       // .pipe(split())
       // .pipe(parse())
       .on('data', function(response) {
-        console.log("resp",response.length, response);
-        
-        if(len == 0 && response.length == 4){
+        console.log("resp", response.length, response);
+
+        if (len == 0 && response.length == 4) {
           len = helpers.ctype.ruint32(response, 'big', 0);
           return;
-        }else if(response.length == 1){
+        }
+        else if (response.length == 1) {
           type = response[0];
           len = 1;
-        }else{
+        }
+        else {
           len = helpers.ctype.ruint32(response, 'big', 0);
           type = helpers.ctype.ruint8(response, 'big', 4);
         }
-        console.log("len",len);
-        
+        console.log("len", len);
+
         // msgdata = msgdata.concat(Array.from(response))
-        
+
         // console.log("response",response);
         // return;
-        
+
         try {
           console.log("req-type", type)
           console.log("data-in", Buffer.from(response))
@@ -161,47 +183,28 @@ function startServer(pub) {
             case helpers.PROTOCOL.SSH_AGENTC_REQUEST_RSA_IDENTITIES:
               break;
             case helpers.PROTOCOL.SSH2_AGENTC_REQUEST_IDENTITIES:
-              console.log("list pubkeys")
-              var kbt = Buffer.from(helpers.getCharCodes("ssh-ed25519"));
+              console.log("SSH2_AGENTC_REQUEST_IDENTITIES", len, type, JSON.stringify(response))
+              // var kbt = Buffer.from(helpers.getCharCodes("ssh-ed25519"));
               // var _key = Buffer.from("439083de2ae68fd822a5b172d299403feecb96f25e299a8129ffde012aa649e2", "hex");
-              var _key = Buffer.from(pub, "hex");
+              // var _key = Buffer.from(pub, "hex");
 
-              var key = Buffer.alloc(4 + kbt.length + 4 + _key.length);
 
-              offset = 0;
-
-              helpers.ctype.wuint32(kbt.length, 'big', key, offset);
-              offset += 4;
-              kbt.copy(key, offset);
-              offset = offset + kbt.length;
-
-              // offset = _writeString(key, kbt, offset);
-              // _writeString(key, _key, offset);
-              // offset += 4;
-
-              helpers.ctype.wuint32(_key.length, 'big', key, offset);
-              offset += 4;
-              _key.copy(key, offset);
-              offset = offset + kbt.length;
-
-              // var kb_c = Buffer.from("ok");
+              var key = Buffer.from( buildKeyBase64(Buffer.from(pub, "hex")) , "base64");
+              
+              console.log("key", key.toString("utf8"))
+              
               var request = Buffer.alloc(4 + 1 + 4 + 1 + 4 + key.length + 4);
-              // var request = new Buffer(4 + 1 + 4 + key._raw.length + 4 + data.length + 4);
-              // var offset = _writeHeader(request, PROTOCOL.SSH2_AGENTC_SIGN_REQUEST);
-              // offset = _writeString(request, key._raw, offset);
-              // offset = _writeString(request, data, offset);
-              // ctype.wuint32(0, 'big', request, offset);
-              // return request;
 
               offset = helpers._writeHeader(request, helpers.PROTOCOL.SSH2_AGENT_IDENTITIES_ANSWER);
               helpers.ctype.wuint32(1, 'big', request, offset);
               offset += 4;
+              
               offset = helpers._writeString(request, key, offset);
-              // offset = helpers._writeString(request, kb_c, offset);
               helpers.ctype.wuint32(0, 'big', request, offset);
-
+              
               stream.write(request);
-              console.log("sent",request);
+              
+              console.log("sent", request);
               break;
             case helpers.PROTOCOL.SSH2_AGENTC_SIGN_REQUEST:
 
@@ -210,25 +213,11 @@ function startServer(pub) {
               console.log("SSH2_AGENTC_SIGN_REQUEST", len, type, JSON.stringify(response))
 
               response = response.slice(5, len);
-              
+
               if (response.length) {
                 var blobkey = helpers._readString(response, offset);
                 offset += 4 + blobkey.len;
                 var indata = helpers._readString(response, offset);
-
-
-                // var signature = _readString(blob, type.length + 4);
-                var id = JSON.stringify(Array.from(indata.str)).split(",0,0,0,");
-
-                console.log(id);
-                id = JSON.stringify(Array.from(indata.str));
-                
-                var offset2 = 0;
-                var hash = helpers._readString(indata.str, offset2);
-                
-                console.log(JSON.stringify(hash.str))
-                
-                // return;
 
                 console.log("indata", JSON.stringify(indata.str));
                 console.log("indata", indata.str.toString("utf8"));
@@ -236,39 +225,22 @@ function startServer(pub) {
                 sign({
                   blob: blobkey.str.toString("base64"),
                   indata: indata.str, // <-- sign this
-                  // signature: signature.toString('base64'),
-                  // _raw: signature
                 }, function(signature) {
-                  // signature = Buffer.from(signature.toString("HEX"));
-                  // signature = Buffer.from(signature.toString("base64"));
-                  // signature = Buffer.from(signature);
                   console.log("sig", signature);
                   console.log("sig", signature.length);
                   console.log("sig", JSON.stringify(signature.toString()));
-                  
+
                   var kb_c = Buffer.from("ssh-ed25519");
-                  var resss = Buffer.alloc(4 + kb_c.length + 4 + signature.length )
+                  var resss = Buffer.alloc(4 + kb_c.length + 4 + signature.length)
                   offset = 0;
                   offset = helpers._writeString(resss, kb_c, offset);
                   offset = helpers._writeString(resss, signature, offset);
-                  
+
                   var request = Buffer.alloc(4 + 1 + 4 + resss.length);
-                  // var request = new Buffer(4 + 1 + 4 + key._raw.length + 4 + data.length + 4);
-                  // var offset = _writeHeader(request, PROTOCOL.SSH2_AGENTC_SIGN_REQUEST);
-                  // offset = _writeString(request, key._raw, offset);
-                  // offset = _writeString(request, data, offset);
-                  // ctype.wuint32(0, 'big', request, offset);
-                  // return request;
-
+                  
                   offset = helpers._writeHeader(request, helpers.PROTOCOL.SSH2_AGENT_SIGN_RESPONSE);
-                  // helpers.ctype.wuint32(signature.length, 'big', request, offset);
-                  // offset += 4;
-                  // offset = helpers._writeString(request, kb_c, offset);
-                  // offset = helpers._writeString(request, signature, offset);
+                  
                   offset = helpers._writeString(request, resss, offset);
-                  // offset = helpers._writeString(request, kb_c, offset);
-                  // helpers.ctype.wuint32(0, 'big', request, offset);
-
                   stream.write(request);
 
                   console.log("sending response", request)
@@ -278,30 +250,15 @@ function startServer(pub) {
               }
               break;
 
-              // var request = Buffer.alloc(4 + 1 + 4 + 1 + 4 );
-              // offset = helpers._writeHeader(request, helpers.PROTOCOL.SSH_AGENT_SUCCESS);
-              // helpers.ctype.wuint32(0, 'big', request, offset);
-
-              // stream.write(request);
-              // break;
             default:
-              // var kb_c = Buffer.from("ok");
               var request = Buffer.alloc(4 + 1 + 4 + 1 + 4);
-              // var request = new Buffer(4 + 1 + 4 + key._raw.length + 4 + data.length + 4);
-              // var offset = _writeHeader(request, PROTOCOL.SSH2_AGENTC_SIGN_REQUEST);
-              // offset = _writeString(request, key._raw, offset);
-              // offset = _writeString(request, data, offset);
-              // ctype.wuint32(0, 'big', request, offset);
-              // return request;
 
               offset = helpers._writeHeader(request, helpers.PROTOCOL.SSH_AGENT_FAILURE);
-              // helpers.ctype.wuint32(1, 'big', request, offset);
-              // offset += 4;
-              // offset = helpers._writeString(request, signature, offset);
-              // offset = helpers._writeString(request, kb_c, offset);
+              
               helpers.ctype.wuint32(0, 'big', request, offset);
 
               stream.write(request);
+              
               console.log("fail");
               break;
           }
@@ -309,11 +266,7 @@ function startServer(pub) {
 
         }
         catch (e) { console.log(e) }
-        // for(var i in events) {
-        //   if (events[i].test(stream, data)) {
-        //     events[i].handler(stream, data);
-        //   }
-        // }
+        
         len = 0;
         type = -1;
       });
@@ -327,30 +280,6 @@ function startServer(pub) {
   });
 };
 
-
-/*
-var optimist = require('optimist')
-	.usage('Usage: $0 --cmd [cmd]')
-	.demand('cmd')
-	.describe('cmd', 'Command to run settime , getlables')
-	.alias('cmd', 'c')
-	.describe('slot', 'slot id to choose')
-	.alias('slot', 's')
-	.describe('data', 'additional data')
-	.alias('data', 'd')
-	.describe('blob', 'blob data')
-	.alias('blob', 'b')
-	.describe('keytype', 'keytype')
-	.alias('keytype', 't')
-	.describe('help', 'Show Help')
-	.alias('help', 'h').alias('help', '?');
-
-var argv = optimist.argv;
-
-if (argv.help) {
-	return optimist.showHelp();
-}
-*/
 
 
 const nodeHID = require('node-hid');
@@ -406,38 +335,8 @@ const messages = {
   OKFWUPDATE: 244,
 };
 
-/*
-switch (argv.cmd) {
-	case 'settime':
-		setTime();
-		break;
-
-	case 'getlabels':
-		getLabels();
-		break;
-
-	case 'getpub':
-		getPub();
-		break;
-
-	case 'sign':
-		sign();
-		break;
-
-	case 'dotest':
-		dotest();
-		break;
-
-	default:
-
-		console.log("argv", argv);
-
-}*/
-
 function findHID(hid_interface) {
   var hids = nodeHID.devices();
-
-  //console.log(hids);
 
   for (var i in hids) {
     if (hids[i].product == "ONLYKEY") {
@@ -569,8 +468,8 @@ function getPub(done) {
       msg = Buffer.from(msg);
 
       com.close();
-      
-      console.log(JSON.stringify(Buffer.from(msg)))
+
+      // console.log(JSON.stringify(Buffer.from(msg)))
       if (done)
         done(msg.toString("hex"));
 
@@ -618,7 +517,7 @@ function sign(data, done) {
       if (msg.toString("utf8").indexOf("Error device locked") == 0)
         return;
 
-      console.log("res",msg.length,  JSON.stringify(Buffer.from(msg)));
+      console.log("res", msg.length, JSON.stringify(Buffer.from(msg)));
       msg = Array.from(msg);
 
       msg = msg.splice(0, 64);
@@ -630,10 +529,9 @@ function sign(data, done) {
         done(msg, data);
 
     });
-    var crypto = require('crypto');
     var slot = 201; //argv.slot ? parseInt(argv.slot, 10) : 201;
 
-    var hash = data.indata;//crypto.createHash('sha256').update(data.indata).digest();
+    var hash = data.indata; //crypto.createHash('sha256').update(data.indata).digest();
     var blob = crypto.createHash('sha256').update("localhost").digest(); //.toString("hex");
 
 
