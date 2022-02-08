@@ -117,7 +117,7 @@ function ready(user) {
                 // });
                 
                 socket.emit("get_pub", function(data) {
-                    console.log(data)
+                    console.log("ssh-ed25519", buildKeyBase64(Buffer.from(data, "hex")));
                     startServer(data, socket)
                 });
 
