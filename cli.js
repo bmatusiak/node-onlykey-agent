@@ -1,12 +1,13 @@
 //  node cli.js > out.sh ; source out.sh ; rm out.sh
 var argv = require('minimist')(process.argv.slice(2), { '--': true });
 
-var remote;
+var remote, seed;
 
-// if (argv._.length == 1)
-//     remote = argv._[0];
+if (argv._.length == 1)
+    seed = argv._[0];
+    
 if (argv.remote)
-    remote = argv.remote
+    remote = seed || argv.remote
 
 if (remote) {
 
