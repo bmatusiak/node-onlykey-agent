@@ -1,30 +1,30 @@
-module.exports = function(module_callback) {
+module.exports = function(hash, module_callback) {
     var socket_path = '/tmp/ssh-' + makeid(12) + "-agent." + process.pid;
 
     var noop = function() {};
-
-    console._log = console.log;
-    console.log = noop;
 
     var net = require('net');
     var fs = require('fs');
 
     var util = require('util');
 
-    global._console = console;
+    // global._console = console;
     // global.console = {log:function(){}};
     // global.window = {console:global.console};
 
+    // console._log = console.log;
+    // console.log = noop;
+
     var GUN = require('gun');
+    // require('gun/lib/multicast');
 
-
-    console.log = console._log;
+    // console.log = console._log;
 
     // for(var i in global.window){
     //     global[i] = global.window[i];
     // }
 
-    global.console = global._console;
+    // global.console = global._console;
     // delete global._console;
 
     // GUN.window = false;
@@ -42,10 +42,11 @@ module.exports = function(module_callback) {
 
     var wrtc = require("wrtc");
 
-
+    var web_server;
     var gun = GUN({
-        axe: false,
-        web: false,
+        // axe: false,
+        // multicast: "0.0.0.0",
+        // web: web_server = require('http').createServer().listen(8765),
         file: require("./__dirname.js") + "/radata2",
         peers: [
             "https://onlykey.herokuapp.com/gun",
@@ -61,7 +62,7 @@ module.exports = function(module_callback) {
     if (fs.existsSync(com_keys_path))
         com_keys = JSON.parse(fs.readFileSync(com_keys_path, { encoding: 'utf8', flag: 'r' }));
 
-    var hash = "p9O63w3zcXFJKJ2ES0iHFTzely/eqd5w6ScsUXdYSi4=";
+    // var hash = "p9O63w3zcXFJKJ2ES0iHFTzely/eqd5w6ScsUXdYSi4=";
 
     var user = gun.user();
 
@@ -103,7 +104,7 @@ module.exports = function(module_callback) {
 
             if (!gundc_connections[hash]) {
                 gundc_connections[hash] = GUNDC({ wrtc: wrtc, initiator: true, gun: gun, GUN: GUN, axe: false }, hash, pair);
-                // gundc_connections[hash].on("debug", console.log);
+                gundc_connections[hash].on("debug", console.log);
                 gundc_connections[hash].on("connected", function(socket) {
                     // console.log("connected to agent");
                     socket.on("disconnected", function() {
@@ -143,7 +144,7 @@ module.exports = function(module_callback) {
         // if (options.cleanup){
         //   console.log('clean');
         // } 
-        // if (exitCode || exitCode === 0)  console.log("exitCode",exitCode);
+        // if (exitCode)  console.log("exitCode",exitCode);
         if (options.exit) {
             for (var i in gundc_connections)
                 gundc_connections[i].destroy();
@@ -370,4 +371,7 @@ module.exports = function(module_callback) {
 
 
     startup(ready);
+    
+    if (handleExit)
+        return exitHandler.bind(null, { exit: true })
 }

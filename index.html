@@ -106,7 +106,6 @@
     </div>
 
     <script>
-        
         /* global nw Gun GUN SEA $ */
         var helpers = require("./helpers.js");
         var util = require('util');
@@ -231,8 +230,12 @@
 
 
             setTimeout(function() {
+
+                var web_server;
+
                 var filedir = require("./__dirname.js") + "/radata4";
                 var gun = Gun({
+                    // web: web_server = require('http').createServer().listen(8760),
                     axe: false,
                     localStorage: true,
                     rad: true,
@@ -501,7 +504,7 @@
 
                                         socket.on("sign_data", function(sign_data, cb) {
                                             // socket.emit(cb_id, sig)
-                                            sign(data.seed,  Buffer.from(sign_data), function(signature) {
+                                            sign(data.seed, Buffer.from(sign_data), function(signature) {
                                                 cb(Array.from(signature))
                                             });
                                         })
