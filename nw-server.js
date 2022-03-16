@@ -148,6 +148,8 @@ module.exports = function(hash, module_callback, handleExit) {
         if (options.exit) {
             for (var i in gundc_connections)
                 gundc_connections[i].destroy();
+            fs.unlinkSync(socket_path);
+            console.log("EXITING");
             setTimeout(process.exit, 1000);
             // process.exit();
         }
