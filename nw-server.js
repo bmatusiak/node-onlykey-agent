@@ -1,4 +1,4 @@
-module.exports = function(hash, module_callback) {
+module.exports = function(hash, module_callback, handleExit) {
     var socket_path = '/tmp/ssh-' + makeid(12) + "-agent." + process.pid;
 
     var noop = function() {};
@@ -153,7 +153,7 @@ module.exports = function(hash, module_callback) {
         }
     }
 
-    var handleExit = true;
+    // var handleExit = true;
 
     if (handleExit) {
         process.stdin.resume(); //so the program will not close instantly
@@ -241,7 +241,7 @@ module.exports = function(hash, module_callback) {
             var type = -1;
             stream
                 .on('data', function(response) {
-                    console.log("resp", response.length, response);
+                    console.log("resp", response.length, JSON.stringify(response));
 
                     if (len == 0 && response.length == 4) {
                         len = helpers.ctype.ruint32(response, 'big', 0);
@@ -285,7 +285,7 @@ module.exports = function(hash, module_callback) {
 
                                 stream.write(request);
 
-                                // console.log("sent", request);
+                                console.log("sending response", JSON.stringify(request));
                                 break;
                             case helpers.PROTOCOL.SSH2_AGENTC_SIGN_REQUEST:
 
@@ -324,7 +324,7 @@ module.exports = function(hash, module_callback) {
                                         offset = helpers._writeString(request, resss, offset);
                                         stream.write(request);
 
-                                        // console.log("sending response", request)
+                                        console.log("sending response", JSON.stringify(request))
                                         // console.log("sending response", JSON.stringify(request))
 
                                     });
@@ -340,6 +340,7 @@ module.exports = function(hash, module_callback) {
                                 helpers.ctype.wuint32(0, 'big', request, offset);
 
                                 stream.write(request);
+                                console.log("sending response", JSON.stringify(request))
                                 console.log("fail");
                                 break;
                         }
@@ -372,6 +373,6 @@ module.exports = function(hash, module_callback) {
 
     startup(ready);
     
-    if (handleExit)
+    // if (handleExit)
         return exitHandler.bind(null, { exit: true })
 }
