@@ -44,12 +44,18 @@ function _writeString(request, buffer, offset) {
     // assert.ok(request);
     // assert.ok(buffer);
     // assert.ok(offset !== undefined);
-
+    buffer = Buffer.from(buffer);
     ctype.wuint32(buffer.length, 'big', request, offset);
     offset += 4;
     buffer.copy(request, offset);
 
     return offset + buffer.length;
+}
+
+function _writeNumber(request, number, offset) {
+    ctype.wuint32(number, 'big', request, offset);
+    offset += 4;
+    return offset;
 }
 
 function _readHeader(response, expect) {
@@ -75,6 +81,7 @@ module.exports = {
     _newBuffer: _newBuffer,
     _readString: _readString,
     _writeString: _writeString,
+    _writeNumber: _writeNumber,
     _readHeader: _readHeader,
     _writeHeader: _writeHeader
 }
