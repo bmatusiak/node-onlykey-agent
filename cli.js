@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 //  node cli.js > out.sh ; source out.sh ; rm out.sh
 var argv = require('minimist')(process.argv.slice(2), { '--': true });
 
